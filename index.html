@@ -341,6 +341,25 @@
 
   .date-pick{ position:absolute; width:1px; height:1px; opacity:0; pointer-events:none; }
 
+  /* ---------- copy-to popover ---------- */
+  .pop{
+    position:absolute; z-index:40; width:19rem; max-width:calc(100vw - 1rem);
+    background:var(--surface); border:1px solid var(--line); border-radius:.8rem; padding:.65rem .7rem .6rem;
+    box-shadow:var(--shadow-lift); animation:popIn .18s ease-out;
+  }
+  .pop-title{ font-size:.66rem; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3); font-weight:500; margin:0 0 .45rem .1rem; }
+  .pop-days{ display:grid; grid-template-columns:repeat(4,1fr); gap:.3rem; }
+  .chip{
+    appearance:none; background:none; border:1px solid var(--line-strong); border-radius:999px; padding:.32rem .2rem;
+    font-size:.72rem; font-weight:500; color:var(--ink); cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; letter-spacing:-.01em;
+    transition:background-color .12s, border-color .12s;
+  }
+  .chip:hover{ background:var(--line); }
+  .chip.is-done{ background:var(--marker); border-color:var(--marker); color:var(--on-marker); }
+  .chip.is-done::before{ content:'✓ '; }
+  .pop-link{ margin:.5rem 0 0 .1rem; padding:0; background:none; border:0; color:var(--ink-2); font-size:.78rem; cursor:pointer; text-decoration:underline; text-underline-offset:3px; text-decoration-color:var(--line-strong); }
+  .pop-link:hover{ color:var(--ink); text-decoration-color:var(--ink); }
+
   @media (prefers-reduced-motion:reduce){ *{ transition:none !important; animation:none !important; } }
 </style>
 <script>
@@ -472,7 +491,7 @@
 
   <footer class="foot">
     <span class="status" id="status" data-kind="local">Saved in this browser</span>
-    <span class="hint">Click a task to edit · drag the grip to reorder, or drop it on a day</span>
+    <span class="hint">Click a task to edit · drag it onto a day to move · copy icon to repeat it on other days</span>
   </footer>
 </main>
 
@@ -481,6 +500,11 @@
   <button type="button" id="toastUndo">Undo</button>
 </div>
 <input type="date" id="datePick" class="date-pick" tabindex="-1" aria-hidden="true">
+<div class="pop" id="pop" hidden role="dialog" aria-label="Copy this task to another day">
+  <div class="pop-title">Copy to</div>
+  <div class="pop-days" id="popDays"></div>
+  <button type="button" class="pop-link" id="popPick">Pick another date…</button>
+</div>
 
 <script>
 (function () {
@@ -513,6 +537,7 @@
     arrow: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h10M9 4l4 4-4 4"/></svg>',
     cal: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="3.5" width="11" height="10" rx="1.5"/><path d="M2.5 6.5h11M5.5 2v3M10.5 2v3"/></svg>',
     x: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>',
+    dup: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="1.6"/><path d="M10.5 5.5V3.6a1.1 1.1 0 0 0-1.1-1.1H3.6a1.1 1.1 0 0 0-1.1 1.1v5.8a1.1 1.1 0 0 0 1.1 1.1h1.9"/></svg>',
     sun: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="8" cy="8" r="3"/><path d="M8 1.5v1.8M8 12.7v1.8M1.5 8h1.8M12.7 8h1.8M3.4 3.4l1.3 1.3M11.3 11.3l1.3 1.3M3.4 12.6l1.3-1.3M11.3 4.7l1.3-1.3"/></svg>',
     moon: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M13.5 9.6A5.6 5.6 0 0 1 6.4 2.5a5.6 5.6 0 1 0 7.1 7.1z"/></svg>'
   };
@@ -582,6 +607,13 @@
     offerUndo('Deleted “' + short(t.title, 40) + '”', () => {
       const cur = tasksOf(d).slice(); cur.splice(Math.min(i, cur.length), 0, t); setDay(d, cur);
     });
+  }
+  function duplicateTask(from, id, to) {
+    const t = tasksOf(from).find((x) => x.id === id); if (!t) return null;
+    const copy = { id: uid(), title: t.title, done: false, createdAt: new Date().toISOString(), doneAt: null };
+    setDay(to, tasksOf(to).concat([copy]));
+    offerUndo('Copied to ' + dayLabel(to), () => setDay(to, tasksOf(to).filter((x) => x.id !== copy.id)));
+    return copy;
   }
   function moveTask(from, id, to, opts) {
     if (from === to) return;
@@ -663,6 +695,7 @@
       + '<div class="actions">'
       + (t.done ? '' : '<button type="button" data-act="next" title="' + nextLabel + '" aria-label="' + nextLabel + '">' + ICON.arrow + '</button>'
         + '<button type="button" data-act="pick" title="Move to another day" aria-label="Move to another day">' + ICON.cal + '</button>')
+      + '<button type="button" data-act="dup" title="Copy to another day" aria-label="Copy to another day">' + ICON.dup + '</button>'
       + '<button type="button" data-act="delete" title="Delete" aria-label="Delete">' + ICON.x + '</button>'
       + '</div></li>';
   }
@@ -821,7 +854,8 @@
       const a = act.dataset.act;
       if (a === 'delete') { deleteTask(d, id); render(); }
       else if (a === 'next') { const today = todayYmd(); moveTask(d, id, d < today ? today : addDays(d, 1)); render(); }
-      else if (a === 'pick') openPicker(act, d, id);
+      else if (a === 'pick') openPicker(act, d, id, 'move');
+      else if (a === 'dup') openPop(act, d, id);
       return;
     }
     if (e.target.closest('.title')) startEdit(row);
@@ -855,8 +889,8 @@
 
   // ---------- date picker ----------
   const datePick = $('#datePick');
-  function openPicker(btn, d, id) {
-    pickCtx = { d, id }; datePick.value = d;
+  function openPicker(btn, d, id, mode) {
+    pickCtx = { d, id, mode: mode || 'move' }; datePick.value = d;
     const r = btn.getBoundingClientRect();
     datePick.style.top = (r.bottom + window.scrollY) + 'px'; datePick.style.left = (r.left + window.scrollX) + 'px';
     try { if (typeof datePick.showPicker === 'function') datePick.showPicker(); else { datePick.focus(); datePick.click(); } }
@@ -864,8 +898,42 @@
   }
   datePick.addEventListener('change', () => {
     if (!pickCtx || !datePick.value) return;
-    const { d, id } = pickCtx; pickCtx = null;
-    moveTask(d, id, datePick.value); render();
+    const { d, id, mode } = pickCtx; pickCtx = null;
+    if (mode === 'copy') duplicateTask(d, id, datePick.value); else moveTask(d, id, datePick.value);
+    render();
+  });
+
+  // ---------- copy-to popover ----------
+  const pop = $('#pop'), popDays = $('#popDays'), popPick = $('#popPick');
+  let popCtx = null;
+  function openPop(btn, d, id) {
+    popCtx = { d, id, btn };
+    const today = todayYmd();
+    let h = '';
+    for (let i = 1; i <= 7; i++) {
+      const t = addDays(d, i);
+      const label = t === today ? 'Today' : t === addDays(today, 1) ? 'Tomorrow' : fmt(t, { weekday: 'short' }) + ' ' + parse(t).getDate();
+      h += '<button type="button" class="chip" data-date="' + t + '" title="' + esc(fmt(t, { weekday: 'long', day: 'numeric', month: 'long' })) + '">' + esc(label) + '</button>';
+    }
+    popDays.innerHTML = h;
+    pop.hidden = false;
+    const r = btn.getBoundingClientRect(); const w = pop.offsetWidth;
+    let left = r.right + window.scrollX - w; if (left < 8) left = 8;
+    pop.style.left = left + 'px'; pop.style.top = (r.bottom + window.scrollY + 6) + 'px';
+    popDays.querySelector('.chip').focus();
+  }
+  function closePop() { if (!pop.hidden) { pop.hidden = true; popCtx = null; } }
+  popDays.addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip'); if (!chip || !popCtx || chip.classList.contains('is-done')) return;
+    duplicateTask(popCtx.d, popCtx.id, chip.dataset.date);
+    chip.classList.add('is-done');
+    render();
+  });
+  popPick.addEventListener('click', () => { if (!popCtx) return; const c = popCtx; closePop(); openPicker(c.btn, c.d, c.id, 'copy'); });
+  document.addEventListener('click', (e) => { if (!pop.hidden && !pop.contains(e.target) && !e.target.closest('[data-act="dup"]')) closePop(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePop(); });
+  window.addEventListener('resize', () => {
+    closePop();
   });
 
   // ---------- drag and drop (pointer events: mouse + touch) ----------
