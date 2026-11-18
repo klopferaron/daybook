@@ -200,6 +200,23 @@
   @keyframes sway{ from{ transform:rotate(-2.5deg); } to{ transform:rotate(2.5deg); } }
   @media (prefers-reduced-motion:reduce){ .scene .draw{ stroke-dashoffset:0; } .scene .grow{ opacity:1; } }
 
+  /* ---------- combined work time, centred where the path ends ---------- */
+  .worked{ position:relative; z-index:1; display:flex; flex-direction:column; align-items:center; gap:.35rem; margin:.25rem auto .1rem; text-align:center; }
+  .worked-num{
+    position:relative; z-index:0; display:inline-flex; align-items:center; gap:.55rem; padding:0 .12em;
+    font-size:2.15rem; font-weight:500; line-height:1; letter-spacing:-.02em; font-variant-numeric:tabular-nums; color:var(--ink);
+  }
+  .worked.is-zero .worked-num{ color:var(--ink-3); }
+  /* while a timer runs, the total gets the highlighter */
+  .worked.is-live .worked-num::before{
+    content:''; position:absolute; z-index:-1; left:-.05em; right:-.05em; bottom:var(--hl-b); height:var(--hl-h);
+    background:var(--marker); border-radius:2px; transform:skewX(-9deg) rotate(-1deg); clip-path:polygon(0 12%, 100% 0, 99% 88%, 1% 100%);
+  }
+  .worked-dot{ display:none; width:.42rem; height:.42rem; border-radius:50%; background:var(--marker); box-shadow:0 0 0 1px var(--line-strong); animation:blink 1.6s ease-in-out infinite; }
+  .worked.is-live .worked-dot{ display:block; }
+  @keyframes blink{ 50%{ opacity:.25; } }
+  .worked-label{ font-size:.66rem; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-3); font-weight:500; }
+
   /* ---------- day heading ---------- */
   .day-head{ display:flex; align-items:flex-end; justify-content:space-between; gap:1rem; margin:1.4rem 0 1.1rem; flex-wrap:wrap; }
   .day-name{
@@ -222,9 +239,7 @@
   .day-rel.mark{ color:var(--on-marker); }
   .day-meta{ margin-left:auto; display:flex; flex-direction:column; align-items:flex-end; gap:.2rem; padding-bottom:.25rem; }
   .day-progress{ font-size:.85rem; color:var(--ink-2); font-variant-numeric:tabular-nums; white-space:nowrap; }
-  .day-time{ display:inline-flex; align-items:center; gap:.3rem; font-size:.78rem; color:var(--ink-3); font-variant-numeric:tabular-nums; white-space:nowrap; }
-  .day-time svg{ width:.75rem; height:.75rem; display:block; }
-  .day-time.is-live{ color:var(--ink); }
+
   .day-progress.is-complete{ color:var(--ink); font-weight:500; }
   .day-progress svg{ width:.85rem; height:.85rem; vertical-align:-2px; margin-left:.2rem; }
   .day-progress.is-fresh{ animation:popIn .45s cubic-bezier(.34,1.56,.64,1); }
@@ -493,6 +508,11 @@
     </g>
   </svg>
 
+  <div class="worked" id="worked">
+    <div class="worked-num"><span class="worked-dot" aria-hidden="true"></span><span id="workedNum" role="timer">0:00:00</span></div>
+    <div class="worked-label" id="workedLabel">worked today</div>
+  </div>
+
   <section class="day" id="day">
     <div class="day-head">
       <div>
@@ -504,7 +524,6 @@
       </div>
       <div class="day-meta">
         <div class="day-progress" id="dayProgress"></div>
-        <div class="day-time" id="dayTime" hidden></div>
       </div>
     </div>
 
@@ -744,7 +763,8 @@
   // ---------- render ----------
   const week = $('#week'), weekSum = $('#weekSum'), monthLabel = $('#monthLabel'), todayBtn = $('#todayBtn');
   const dayName = $('#dayName'), dayDate = $('#dayDate'), dayRel = $('#dayRel'), dayProgress = $('#dayProgress');
-  const doneCard = $('#doneCard'), scene = $('#scene'), dayTime = $('#dayTime');
+  const doneCard = $('#doneCard'), scene = $('#scene');
+  const worked = $('#worked'), workedNum = $('#workedNum'), workedLabel = $('#workedLabel');
   let lastView = null;
   const carry = $('#carry'), carryText = $('#carryText'), carryBtn = $('#carryBtn');
   const addInput = $('#addInput'), list = $('#list'), doneList = $('#doneList'), doneCount = $('#doneCount'), empty = $('#empty');
@@ -771,19 +791,25 @@
 
   // totals for the day and week; also called every second while a timer runs
   function weekSummary() {
-    let wDone = 0, wOpen = 0, wMs = 0;
-    for (let i = 0; i < 7; i++) tasksOf(addDays(state.weekStart, i)).forEach((t) => { if (t.done) wDone++; else wOpen++; wMs += elapsed(t); });
+    let wDone = 0, wOpen = 0;
+    for (let i = 0; i < 7; i++) tasksOf(addDays(state.weekStart, i)).forEach((t) => { if (t.done) wDone++; else wOpen++; });
     const parts = [];
     if (wDone || wOpen) parts.push('This week · ' + wDone + ' done · ' + wOpen + ' open');
-    if (wMs >= 60000) parts.push(dur(wMs) + ' tracked');
     const st = streak(); if (st >= 2) parts.push(st + '-day streak');
     return parts.join(' · ');
   }
+  const hms = (ms) => { const s = Math.floor(ms / 1000); return Math.floor(s / 3600) + ':' + pad(Math.floor(s % 3600 / 60)) + ':' + pad(s % 60); };
   function paintTotals() {
-    const ts = tasksOf(state.view), ms = ts.reduce((a, t) => a + elapsed(t), 0), live = ts.some((t) => t.runAt);
-    dayTime.hidden = !(live || ms >= 60000);
-    dayTime.innerHTML = ICON.clock + '<span>' + dur(ms) + ' tracked</span>';
-    dayTime.classList.toggle('is-live', live);
+    const v = state.view, today = todayYmd();
+    const ts = tasksOf(v), ms = ts.reduce((a, t) => a + elapsed(t), 0), live = ts.some((t) => t.runAt);
+    let wMs = 0;
+    for (let i = 0; i < 7; i++) tasksOf(addDays(state.weekStart, i)).forEach((t) => { wMs += elapsed(t); });
+    // the day's combined work time, all tasks together, ticking while a timer runs
+    workedNum.textContent = hms(ms);
+    const lead = v === today ? 'worked today' : v === addDays(today, -1) ? 'worked yesterday' : v < today ? 'worked on ' + dayLabel(v) : 'tracked for ' + dayLabel(v);
+    workedLabel.textContent = lead + (wMs > ms && wMs >= 60000 ? ' · ' + dur(wMs) + ' this week' : '');
+    worked.classList.toggle('is-live', live);
+    worked.classList.toggle('is-zero', ms < 1000);
     weekSum.textContent = weekSummary();
     const r = findRunning();
     document.title = r ? '▶ ' + clock(elapsed(r.t)) + ' · ' + short(r.t.title, 40) : 'Daybook';
