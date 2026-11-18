@@ -220,7 +220,11 @@
   .day-sub{ display:flex; align-items:baseline; gap:.55rem; margin-top:.35rem; color:var(--ink-2); font-size:.95rem; }
   .day-rel{ font-family:'Newsreader', Georgia, serif; font-style:italic; font-size:1.15rem; color:var(--ink); padding:0 .1em; }
   .day-rel.mark{ color:var(--on-marker); }
-  .day-progress{ font-size:.85rem; color:var(--ink-2); font-variant-numeric:tabular-nums; white-space:nowrap; margin-left:auto; padding-bottom:.25rem; }
+  .day-meta{ margin-left:auto; display:flex; flex-direction:column; align-items:flex-end; gap:.2rem; padding-bottom:.25rem; }
+  .day-progress{ font-size:.85rem; color:var(--ink-2); font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .day-time{ display:inline-flex; align-items:center; gap:.3rem; font-size:.78rem; color:var(--ink-3); font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .day-time svg{ width:.75rem; height:.75rem; display:block; }
+  .day-time.is-live{ color:var(--ink); }
   .day-progress.is-complete{ color:var(--ink); font-weight:500; }
   .day-progress svg{ width:.85rem; height:.85rem; vertical-align:-2px; margin-left:.2rem; }
   .day-progress.is-fresh{ animation:popIn .45s cubic-bezier(.34,1.56,.64,1); }
@@ -290,6 +294,38 @@
   .actions button svg{ width:.9rem; height:.9rem; display:block; }
   .actions button:hover{ background:var(--line); color:var(--ink); }
   .actions button[data-act="delete"]:hover{ color:var(--danger); }
+
+  /* ---------- timer ---------- */
+  .timer{ display:flex; align-items:center; gap:.1rem; flex:none; }
+  .timer.is-idle{ opacity:0; transition:opacity .12s; }
+  .task:hover .timer.is-idle, .task:focus-within .timer.is-idle{ opacity:1; }
+  @media (hover:none){ .timer.is-idle{ opacity:.7; } }
+  .t-btn{
+    appearance:none; display:inline-flex; align-items:center; gap:.32rem; height:1.6rem; padding:0 .6rem 0 .5rem;
+    border:1px solid var(--line-strong); border-radius:999px; background:var(--bg); color:var(--ink-2);
+    font-size:.8rem; font-weight:500; font-variant-numeric:tabular-nums; line-height:1; cursor:pointer;
+    transition:background-color .15s, border-color .15s, color .15s;
+  }
+  .t-btn svg{ width:.62rem; height:.62rem; display:block; flex:none; }
+  .t-btn:hover{ border-color:var(--ink); color:var(--ink); }
+  .timer.is-idle .t-btn{ width:1.7rem; height:1.7rem; padding:0; justify-content:center; border-color:transparent; background:none; color:var(--ink-3); }
+  .timer.is-idle .t-btn:hover{ background:var(--line); color:var(--ink); }
+  .timer.is-running .t-btn{ background:var(--marker); border-color:var(--marker); color:var(--on-marker); animation:breathe 2.4s ease-in-out infinite; }
+  .t-stop{ appearance:none; width:1.6rem; height:1.6rem; border:0; background:none; border-radius:999px; padding:0; display:grid; place-items:center; color:var(--ink-3); cursor:pointer; transition:background-color .15s, color .15s; }
+  .t-stop svg{ width:.6rem; height:.6rem; display:block; }
+  .t-stop:hover{ background:var(--line); color:var(--ink); }
+  .t-done{ display:inline-flex; align-items:center; gap:.28rem; flex:none; margin-top:.2rem; font-size:.78rem; color:var(--ink-3); font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .t-done svg{ width:.72rem; height:.72rem; display:block; }
+  /* the task you're working on gets a soft highlighter under its title */
+  .task.is-running .title-text{
+    background-image:linear-gradient(var(--ink-3), var(--ink-3)), linear-gradient(var(--marker-soft), var(--marker-soft));
+    background-size:0% 1.5px, 100% .55em; background-position:0 60%, 0 95%;
+  }
+  @keyframes breathe{ 0%, 100%{ box-shadow:0 0 0 0 var(--marker-soft); } 50%{ box-shadow:0 0 0 .3rem var(--marker-soft); } }
+  @media (max-width:520px){
+    .task{ flex-wrap:wrap; row-gap:.35rem; }
+    .timer.has-time{ order:10; flex-basis:100%; padding-left:3.875rem; }
+  }
 
   .task.placeholder{ opacity:.25; }
   .task.ghost{
@@ -466,7 +502,10 @@
           <span class="day-rel" id="dayRel" hidden></span>
         </div>
       </div>
-      <div class="day-progress" id="dayProgress"></div>
+      <div class="day-meta">
+        <div class="day-progress" id="dayProgress"></div>
+        <div class="day-time" id="dayTime" hidden></div>
+      </div>
     </div>
 
     <div class="carry" id="carry" hidden>
@@ -491,7 +530,7 @@
 
   <footer class="foot">
     <span class="status" id="status" data-kind="local">Saved in this browser</span>
-    <span class="hint">Click a task to edit · drag it onto a day to move · copy icon to repeat it on other days</span>
+    <span class="hint">Click a task to edit · drag it onto a day · ▶ times it · copy icon repeats it</span>
   </footer>
 </main>
 
@@ -539,13 +578,18 @@
     x: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>',
     dup: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="1.6"/><path d="M10.5 5.5V3.6a1.1 1.1 0 0 0-1.1-1.1H3.6a1.1 1.1 0 0 0-1.1 1.1v5.8a1.1 1.1 0 0 0 1.1 1.1h1.9"/></svg>',
     sun: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="8" cy="8" r="3"/><path d="M8 1.5v1.8M8 12.7v1.8M1.5 8h1.8M12.7 8h1.8M3.4 3.4l1.3 1.3M11.3 11.3l1.3 1.3M3.4 12.6l1.3-1.3M11.3 4.7l1.3-1.3"/></svg>',
-    moon: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M13.5 9.6A5.6 5.6 0 0 1 6.4 2.5a5.6 5.6 0 1 0 7.1 7.1z"/></svg>'
+    moon: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M13.5 9.6A5.6 5.6 0 0 1 6.4 2.5a5.6 5.6 0 1 0 7.1 7.1z"/></svg>',
+    play: '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M4.5 2.9v10.2a.7.7 0 0 0 1.05.6l8.2-5.1a.7.7 0 0 0 0-1.2l-8.2-5.1a.7.7 0 0 0-1.05.6z"/></svg>',
+    pause: '<svg viewBox="0 0 16 16" fill="currentColor"><rect x="3.3" y="2.5" width="3.4" height="11" rx=".9"/><rect x="9.3" y="2.5" width="3.4" height="11" rx=".9"/></svg>',
+    stop: '<svg viewBox="0 0 16 16" fill="currentColor"><rect x="2.5" y="2.5" width="11" height="11" rx="2"/></svg>',
+    clock: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8.5" r="5.8"/><path d="M8 5.3v3.4l2.2 1.4M6.4 1.6h3.2"/></svg>'
   };
 
   // ---------- state ----------
   const LS_KEY = 'daybook.v1';
   function sanitize(t) {
-    return { id: String(t.id || uid()), title: String(t.title || ''), done: !!t.done, createdAt: t.createdAt || null, doneAt: t.doneAt || null };
+    return { id: String(t.id || uid()), title: String(t.title || ''), done: !!t.done, createdAt: t.createdAt || null, doneAt: t.doneAt || null,
+             spent: Math.max(0, Number(t.spent) || 0), runAt: (typeof t.runAt === 'number' && isFinite(t.runAt)) ? t.runAt : null };
   }
   function loadLocal() {
     try {
@@ -591,11 +635,39 @@
   }
   function toggleTask(d, id) {
     const before = tasksOf(d).find((t) => t.id === id); const wasDone = !!(before && before.done);
-    setDay(d, tasksOf(d).map((t) => t.id === id ? Object.assign({}, t, { done: !t.done, doneAt: t.done ? null : new Date().toISOString() }) : t));
+    // finishing a task also stops its timer, keeping the time spent
+    setDay(d, tasksOf(d).map((t) => t.id !== id ? t : t.done
+      ? Object.assign({}, t, { done: false, doneAt: null })
+      : Object.assign({}, stopRun(t), { done: true, doneAt: new Date().toISOString() })));
     freshId = id;
     const after = tasksOf(d);
     if (!wasDone && after.length && after.every((t) => t.done)) celebrateNext = true;
   }
+  // ---------- timers: time spent is stored on the task (spent ms + runAt while running) ----------
+  const elapsed = (t) => (t.spent || 0) + (t.runAt ? Math.max(0, Date.now() - t.runAt) : 0);
+  const stopRun = (t) => Object.assign({}, t, { spent: elapsed(t), runAt: null });
+  function clock(ms) {
+    const s = Math.floor(ms / 1000), h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), sec = s % 60;
+    return h ? h + ':' + pad(m) + ':' + pad(sec) : m + ':' + pad(sec);
+  }
+  function dur(ms) {
+    if (ms < 60000) return Math.max(1, Math.round(ms / 1000)) + 's';
+    const m = Math.round(ms / 60000), h = Math.floor(m / 60);
+    return h ? h + 'h' + (m % 60 ? ' ' + (m % 60) + 'm' : '') : m + 'm';
+  }
+  function findRunning() {
+    for (const d of Object.keys(state.days)) { const t = tasksOf(d).find((x) => x.runAt); if (t) return { d, t }; }
+    return null;
+  }
+  function startTimer(d, id) {
+    // one timer at a time: starting this one pauses whatever else is running
+    Object.keys(state.days).forEach((day) => {
+      const ts = tasksOf(day), other = (t) => t.runAt && !(day === d && t.id === id);
+      if (ts.some(other)) setDay(day, ts.map((t) => other(t) ? stopRun(t) : t));
+    });
+    setDay(d, tasksOf(d).map((t) => t.id === id && !t.runAt ? Object.assign({}, t, { runAt: Date.now() }) : t));
+  }
+  function pauseTimer(d, id) { setDay(d, tasksOf(d).map((t) => t.id === id && t.runAt ? stopRun(t) : t)); }
   function renameTask(d, id, title) {
     setDay(d, tasksOf(d).map((t) => t.id === id ? Object.assign({}, t, { title }) : t));
   }
@@ -672,7 +744,7 @@
   // ---------- render ----------
   const week = $('#week'), weekSum = $('#weekSum'), monthLabel = $('#monthLabel'), todayBtn = $('#todayBtn');
   const dayName = $('#dayName'), dayDate = $('#dayDate'), dayRel = $('#dayRel'), dayProgress = $('#dayProgress');
-  const doneCard = $('#doneCard'), scene = $('#scene');
+  const doneCard = $('#doneCard'), scene = $('#scene'), dayTime = $('#dayTime');
   let lastView = null;
   const carry = $('#carry'), carryText = $('#carryText'), carryBtn = $('#carryBtn');
   const addInput = $('#addInput'), list = $('#list'), doneList = $('#doneList'), doneCount = $('#doneCount'), empty = $('#empty');
@@ -685,13 +757,54 @@
     return '<span class="dots" aria-hidden="true">' + h + '</span>';
   }
 
+  function timerHtml(t) {
+    const ms = elapsed(t);
+    if (t.done) return ms >= 1000 ? '<span class="t-done" title="Time spent">' + ICON.clock + dur(ms) + '</span>' : '';
+    const running = !!t.runAt, has = running || ms >= 1000;
+    const label = running ? 'Pause timer' : has ? 'Resume timer' : 'Start timer';
+    return '<div class="timer' + (running ? ' is-running' : '') + (has ? ' has-time' : ' is-idle') + '">'
+      + '<button type="button" class="t-btn" data-act="timer" title="' + label + '" aria-label="' + label + '">'
+      + (running ? ICON.pause : ICON.play) + (has ? '<span class="t-time">' + clock(ms) + '</span>' : '') + '</button>'
+      + (has ? '<button type="button" class="t-stop" data-act="stop" title="Stop and mark done" aria-label="Stop timer and mark done">' + ICON.stop + '</button>' : '')
+      + '</div>';
+  }
+
+  // totals for the day and week; also called every second while a timer runs
+  function weekSummary() {
+    let wDone = 0, wOpen = 0, wMs = 0;
+    for (let i = 0; i < 7; i++) tasksOf(addDays(state.weekStart, i)).forEach((t) => { if (t.done) wDone++; else wOpen++; wMs += elapsed(t); });
+    const parts = [];
+    if (wDone || wOpen) parts.push('This week · ' + wDone + ' done · ' + wOpen + ' open');
+    if (wMs >= 60000) parts.push(dur(wMs) + ' tracked');
+    const st = streak(); if (st >= 2) parts.push(st + '-day streak');
+    return parts.join(' · ');
+  }
+  function paintTotals() {
+    const ts = tasksOf(state.view), ms = ts.reduce((a, t) => a + elapsed(t), 0), live = ts.some((t) => t.runAt);
+    dayTime.hidden = !(live || ms >= 60000);
+    dayTime.innerHTML = ICON.clock + '<span>' + dur(ms) + ' tracked</span>';
+    dayTime.classList.toggle('is-live', live);
+    weekSum.textContent = weekSummary();
+    const r = findRunning();
+    document.title = r ? '▶ ' + clock(elapsed(r.t)) + ' · ' + short(r.t.title, 40) : 'Daybook';
+  }
+  function tick() {
+    if (!findRunning()) return;
+    document.querySelectorAll('.task.is-running').forEach((row) => {
+      const t = tasksOf(row.dataset.date).find((x) => x.id === row.dataset.id);
+      const el = row.querySelector('.t-time'); if (t && el) el.textContent = clock(elapsed(t));
+    });
+    paintTotals();
+  }
+
   function rowHtml(t, d) {
     const today = todayYmd();
     const nextLabel = d < today ? 'Move to today' : d === today ? 'Move to tomorrow' : 'Move to the next day';
-    return '<li class="task' + (t.done ? ' is-done' : '') + (t.id === freshId ? ' is-fresh' : '') + '" data-id="' + esc(t.id) + '" data-date="' + d + '">'
+    return '<li class="task' + (t.done ? ' is-done' : '') + (t.runAt && !t.done ? ' is-running' : '') + (t.id === freshId ? ' is-fresh' : '') + '" data-id="' + esc(t.id) + '" data-date="' + d + '">'
       + (t.done ? '<span class="grip-space"></span>' : '<button class="grip" type="button" aria-label="Drag to reorder, or drop on a day to move">' + ICON.grip + '</button>')
       + '<button class="check" type="button" role="checkbox" aria-checked="' + t.done + '" aria-label="' + (t.done ? 'Mark as not done' : 'Mark as done') + '">' + ICON.check + '</button>'
       + '<div class="title" tabindex="0" role="button" aria-label="Edit: ' + esc(t.title) + '"><span class="title-text">' + esc(t.title) + '</span></div>'
+      + timerHtml(t)
       + '<div class="actions">'
       + (t.done ? '' : '<button type="button" data-act="next" title="' + nextLabel + '" aria-label="' + nextLabel + '">' + ICON.arrow + '</button>'
         + '<button type="button" data-act="pick" title="Move to another day" aria-label="Move to another day">' + ICON.cal + '</button>')
@@ -709,10 +822,10 @@
     todayBtn.hidden = view === today;
 
     // week strip
-    let h = '', wDone = 0, wOpen = 0;
+    let h = '';
     for (let i = 0; i < 7; i++) {
       const d = addDays(state.weekStart, i); const ts = tasksOf(d);
-      const done = ts.filter((t) => t.done).length; wDone += done; wOpen += ts.length - done;
+      const done = ts.filter((t) => t.done).length;
       const cls = 'cell' + (d === view ? ' is-selected' : '') + (d === today ? ' is-today' : '') + (d < today ? ' is-past' : '');
       const label = fmt(d, { weekday: 'long', day: 'numeric', month: 'long' }) + (ts.length ? ', ' + done + ' of ' + ts.length + ' done' : '');
       h += '<button type="button" class="' + cls + '" data-date="' + d + '" aria-label="' + esc(label) + '" aria-current="' + (d === view ? 'date' : 'false') + '">'
@@ -721,10 +834,6 @@
         + dotsHtml(ts) + '</button>';
     }
     week.innerHTML = h;
-    const parts = [];
-    if (wDone || wOpen) parts.push('This week · ' + wDone + ' done · ' + wOpen + ' open');
-    const st = streak(); if (st >= 2) parts.push(st + '-day streak');
-    weekSum.textContent = parts.join(' · ');
 
     // heading
     dayName.textContent = fmt(view, { weekday: 'long' });
@@ -737,6 +846,7 @@
     dayProgress.innerHTML = ts.length ? (complete ? 'All done' + ICON.check : done.length + ' of ' + ts.length + ' done') : '';
     dayProgress.classList.toggle('is-complete', complete);
     dayProgress.classList.toggle('is-fresh', complete && !!freshId);
+    paintTotals();
     // the highlighter across the day name grows with progress; it sweeps in when the day changes
     dayName.style.setProperty('--p', ts.length ? Math.round(done.length / ts.length * 100) : 0);
     dayName.classList.toggle('is-none', !ts.length);
@@ -856,6 +966,8 @@
       else if (a === 'next') { const today = todayYmd(); moveTask(d, id, d < today ? today : addDays(d, 1)); render(); }
       else if (a === 'pick') openPicker(act, d, id, 'move');
       else if (a === 'dup') openPop(act, d, id);
+      else if (a === 'timer') { const t = tasksOf(d).find((x) => x.id === id); if (t && t.runAt) pauseTimer(d, id); else startTimer(d, id); render(); }
+      else if (a === 'stop') { const t = tasksOf(d).find((x) => x.id === id); if (t && !t.done) toggleTask(d, id); render(); }
       return;
     }
     if (e.target.closest('.title')) startEdit(row);
@@ -1042,6 +1154,7 @@
     applyTheme();
   });
   setInterval(applyTheme, 60000);
+  setInterval(tick, 1000);
 
   document.addEventListener('visibilitychange', () => { if (!document.hidden) { applyTheme(); render(); } });
 
